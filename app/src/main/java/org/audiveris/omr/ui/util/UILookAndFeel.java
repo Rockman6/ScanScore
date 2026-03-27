@@ -124,6 +124,35 @@ public class UILookAndFeel
         }
     }
 
+    //-----------------//
+    // toggleDarkMode  //
+    //-----------------//
+    /**
+     * Toggle between light and dark themes.
+     *
+     * @param darkMode true for dark, false for light
+     */
+    public static void toggleDarkMode (boolean darkMode)
+    {
+        final String className = darkMode
+                ? "com.formdev.flatlaf.FlatDarkLaf"
+                : "com.formdev.flatlaf.FlatLightLaf";
+
+        try {
+            UIManager.setLookAndFeel(className);
+            constants.lookAndFeel.setStringValue(className);
+
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                for (java.awt.Window window : java.awt.Window.getWindows()) {
+                    javax.swing.SwingUtilities.updateComponentTreeUI(window);
+                }
+            });
+        } catch (ClassNotFoundException | IllegalAccessException | InstantiationException
+                | UnsupportedLookAndFeelException ex) {
+            logger.warn("Dark mode toggle failed: {}", ex.toString());
+        }
+    }
+
     //~ Inner Classes ------------------------------------------------------------------------------
 
     //-----------//

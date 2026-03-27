@@ -129,8 +129,8 @@ public class ViewParameters
     /** Action for switching entity selection. (Must be lazily computed) */
     private ApplicationAction selectionAction;
 
-    /** Part names painting is chosen to be not persistent. */
-    private boolean partNamePainting = false;
+    /** Part names painting — enabled by default to show LLM-identified instruments. */
+    private boolean partNamePainting = true;
 
     /** Jumbo painting is chosen to be not persistent. */
     private boolean jumboPainting = false;

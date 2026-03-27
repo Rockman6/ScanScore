@@ -80,12 +80,16 @@ public abstract class Releases
     {
         try {
             final GHRepository repository = getRepository();
+            if (repository == null) {
+                logger.warn("Repository not found, skipping release check");
+                return null;
+            }
             final GHRelease latestRelease = repository.getLatestRelease();
             logger.debug("Latest release: {}", latestRelease);
 
             return latestRelease;
-        } catch (IOException ex) {
-            logger.warn("Could not connect to Audiveris project.\n{}", ex.toString());
+        } catch (Exception ex) {
+            logger.warn("Could not connect to project.\n{}", ex.toString());
 
             if (ex.getCause() != null) {
                 logger.warn("Cause: {}", ex.getCause().toString());
@@ -107,9 +111,13 @@ public abstract class Releases
     {
         try {
             final GHRepository repository = getRepository();
+            if (repository == null) {
+                logger.warn("Repository not found, skipping release list");
+                return null;
+            }
             return repository.listReleases().toList();
-        } catch (IOException ex) {
-            logger.warn("Could not connect to Audiveris project.\n{}", ex.toString());
+        } catch (Exception ex) {
+            logger.warn("Could not connect to project.\n{}", ex.toString());
 
             if (ex.getCause() != null) {
                 logger.warn("Cause: {}", ex.getCause().toString());
@@ -125,21 +133,10 @@ public abstract class Releases
     public static GHRepository getRepository ()
         throws IOException
     {
-        final GitHub github = GitHub.connectAnonymously();
-
-        final GHOrganization organization = github.getOrganization(WellKnowns.TOOL_NAME);
-        logger.debug("{}", organization);
-
-        final GHRepository repository = organization.getRepository(WellKnowns.TOOL_ID);
-        logger.debug("{}", repository);
-
-        if (repository == null) {
-            logger.warn("Unknown repository: {}", WellKnowns.TOOL_ID);
-
-            return null;
-        }
-
-        return repository;
+        // Skip network calls entirely for ScanScore — the GitHub org/repo doesn't exist
+        // and the connection attempt blocks the UI thread causing "not responding"
+        logger.info("Release check disabled for ScanScore");
+        return null;
     }
 
     //--------------------//

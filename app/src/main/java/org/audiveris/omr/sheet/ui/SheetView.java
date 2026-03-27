@@ -112,16 +112,16 @@ public class SheetView
         splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true);
         splitPane.setBorder(null);
         splitPane.setContinuousLayout(true);
-        splitPane.setOneTouchExpandable(true);
-        splitPane.setResizeWeight(0.99d); // Give bulk space to left part
+        splitPane.setOneTouchExpandable(false);
+        splitPane.setDividerSize(0);       // No visible divider handle
+        splitPane.setResizeWeight(1.0d);   // Left (sheet) takes all space
 
         if (scrollView != null) {
             splitPane.setLeftComponent(scrollView.getComponent());
         }
 
+        // Right panel (boardsPane) removed — all views are full-width
         if (boardsPane != null) {
-            scrollPane.setBoards(boardsPane.getComponent());
-            splitPane.setRightComponent(scrollPane);
             boardsPane.setSplitContainer(splitPane);
         }
 
@@ -218,15 +218,8 @@ public class SheetView
     public void displayBoards ()
     {
         if (boardsPane != null) {
-            if (splitPane.getRightComponent() != boardsPane.getComponent()) {
-                splitPane.setRightComponent(boardsPane.getComponent());
-            }
-
-            // (Re)connect the boards to their selection inputs if needed
+            // Right panel is hidden — only connect boards for event handling (no UI shown)
             boardsPane.connect();
-
-            // Resize boards
-            boardsPane.resize();
         }
     }
 

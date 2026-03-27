@@ -46,6 +46,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 
 /**
@@ -128,40 +129,44 @@ public abstract class TimeColumn
         Map<TimeValue, AbstractTimeInter[]> vectors = getValueVectors();
         Map<TimeValue, Double> grades = new HashMap<>();
 
-        TimeLoop:
         for (Map.Entry<TimeValue, AbstractTimeInter[]> entry : vectors.entrySet()) {
             final TimeValue time = entry.getKey();
             final AbstractTimeInter[] vector = entry.getValue();
 
-            // Check that this time is present in all standard staves
-            // and compute the time mean grade
+            // Compute mean grade across staves that have this time value.
+            // Allow missing staves — use majority consensus rather than unanimity.
+            // This is essential for orchestral scores where some staves may not have
+            // clear time sig glyphs.
             double mean = 0;
             int count = 0;
+            int standardStaves = 0;
 
             final List<Staff> staves = system.getStaves();
             for (int idx = 0; idx < staves.size(); idx++) {
                 final Staff staff = staves.get(idx);
                 if (!staff.isTablature()) {
+                    standardStaves++;
                     final Inter inter = vector[idx];
-                    if (inter == null) {
-                        logger.debug(
-                                "System#{} TimeValue {} not found in all standard staves",
-                                system.getId(),
-                                time);
-
-                        continue TimeLoop;
+                    if (inter != null) {
+                        mean += inter.getGrade();
+                        count++;
                     }
-
-                    mean += inter.getGrade(); // TODO: use contextual?????
-                    count++;
                 }
+            }
+
+            // Need at least 1/3 of standard staves to agree on this time value
+            if (count == 0 || count < standardStaves / 3) {
+                logger.info(
+                        "System#{} TimeValue {} found in only {}/{} staves, skipping",
+                        system.getId(), time, count, standardStaves);
+                continue;
             }
 
             mean /= count;
             grades.put(time, mean);
         }
 
-        logger.debug("System#{} time sig grades {}", system.getId(), grades);
+        logger.info("System#{} time sig grades {}", system.getId(), grades);
 
         // Select the best time value at system level
         double bestGrade = 0;
@@ -176,8 +181,11 @@ public abstract class TimeColumn
         }
 
         if (timeValue == null) {
+            logger.info("System#{} no valid time sig found", system.getId());
             return false; // Invalid column
         }
+
+        logger.info("System#{} selected TimeSignature: {} grade={}", system.getId(), timeValue, bestGrade);
 
         // Forward the chosen time to each staff
         final AbstractTimeInter[] bestVector = vectors.get(timeValue);
@@ -188,6 +196,8 @@ public abstract class TimeColumn
 
             if (!staff.isTablature()) {
                 TimeBuilder builder = builders.get(staff);
+                // bestVector[is] may be null for staves that didn't detect this time value
+                // — that's OK, createTimeSig handles null
                 builder.createTimeSig(bestVector[is]);
                 builder.discardOthers();
             }
@@ -211,6 +221,13 @@ public abstract class TimeColumn
     {
         final SIGraph sig = system.getSig();
         final Collection<AbstractTimeInter> times = getTimeInters().values();
+
+        // Filter out null entries (staves that didn't detect the time sig)
+        times.removeIf(Objects::isNull);
+        if (times.isEmpty()) {
+            return;
+        }
+
         final Rectangle columnBox = Inters.getBounds(times);
         final List<Inter> neighbors = sig.inters(
                 (Inter inter) -> inter.getBounds().intersects(columnBox)
@@ -356,16 +373,27 @@ public abstract class TimeColumn
         }
 
         // Process each staff on turn, to find candidates
+        int successCount = 0;
+        int totalStaves = builders.size();
         for (TimeBuilder builder : builders.values()) {
             // Retrieve candidates for time items
             builder.findCandidates();
 
-            // This fails if no candidate at all is kept in staff after filtering
-            if (!builder.filterCandidates()) {
-                cleanup(); // Clean up what has been constructed
-
-                return -1; // We failed to find a time sig in stack
+            // Track how many staves have candidates (don't abort if one fails)
+            if (builder.filterCandidates()) {
+                successCount++;
+            } else {
+                logger.info("System#{} staff has no time sig candidates, continuing with others",
+                        system.getId());
             }
+        }
+
+        // Need at least half of the staves to have found candidates
+        if (successCount == 0 || successCount < totalStaves / 3) {
+            logger.info("System#{} too few staves with time sig candidates ({}/{}), aborting",
+                    system.getId(), successCount, totalStaves);
+            cleanup();
+            return -1;
         }
 
         // Check vertical alignment

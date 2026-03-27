@@ -41,16 +41,18 @@ import org.slf4j.LoggerFactory;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 
 import javax.swing.BoundedRangeModel;
 import javax.swing.DefaultBoundedRangeModel;
-import javax.swing.InputMap;
+import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -286,18 +288,46 @@ public class SheetAssembly
     {
         component.setLayout(new BorderLayout());
         component.setNoInsets();
-        component.add(slider, BorderLayout.WEST);
+        // Slider removed from left side — zoom controlled by pinch, CTRL+scroll, or zoom bar below
         component.add(viewsPane, BorderLayout.CENTER);
+        component.add(buildZoomBar(), BorderLayout.SOUTH);
         component.setName("SheetAssemblyPanel");
+    }
 
-        // Avoid slider to react on (and consume) page up/down keys or arrow keys
-        InputMap inputMap = slider.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-        inputMap.put(KeyStroke.getKeyStroke("PAGE_UP"), "none");
-        inputMap.put(KeyStroke.getKeyStroke("PAGE_DOWN"), "none");
-        inputMap.put(KeyStroke.getKeyStroke("LEFT"), "none");
-        inputMap.put(KeyStroke.getKeyStroke("RIGHT"), "none");
-        inputMap.put(KeyStroke.getKeyStroke("UP"), "none");
-        inputMap.put(KeyStroke.getKeyStroke("DOWN"), "none");
+    //---------------//
+    // buildZoomBar  //
+    //---------------//
+    /**
+     * Build a Word-style zoom control bar for the bottom-right corner.
+     */
+    private JPanel buildZoomBar ()
+    {
+        final double zoomFactor = Math.pow(2, 1d / 5);
+
+        JButton zoomOut = new JButton("−");
+        JButton zoomIn  = new JButton("+");
+        JLabel  pctLabel = new JLabel("100%");
+        pctLabel.setHorizontalAlignment(JLabel.CENTER);
+
+        zoomOut.setFocusable(false);
+        zoomIn.setFocusable(false);
+        zoomOut.setToolTipText("Zoom out");
+        zoomIn.setToolTipText("Zoom in");
+
+        zoomOut.addActionListener(e -> zoom.setRatio(zoom.getRatio() / zoomFactor));
+        zoomIn.addActionListener(e -> zoom.setRatio(zoom.getRatio() * zoomFactor));
+
+        // Keep label in sync whenever zoom changes (slider fires ChangeEvents on ratio change)
+        slider.addChangeListener(e -> {
+            int pct = (int) Math.round(zoom.getRatio() * 100);
+            pctLabel.setText(pct + "%");
+        });
+
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
+        bar.add(zoomOut);
+        bar.add(pctLabel);
+        bar.add(zoomIn);
+        return bar;
     }
 
     //---------------//

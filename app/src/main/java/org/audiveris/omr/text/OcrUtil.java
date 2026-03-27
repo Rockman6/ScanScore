@@ -25,6 +25,7 @@ import org.audiveris.omr.constant.Constant;
 import org.audiveris.omr.constant.ConstantSet;
 import org.audiveris.omr.sheet.Sheet;
 import org.audiveris.omr.text.OCR.LayoutMode;
+import org.audiveris.omr.text.rapidocr.RapidOcrEngine;
 import org.audiveris.omr.text.tesseract.TesseractOCR;
 
 import org.slf4j.Logger;
@@ -50,8 +51,21 @@ public abstract class OcrUtil
 
     private static final Logger logger = LoggerFactory.getLogger(OcrUtil.class);
 
-    /** The related OCR. */
-    private static final OCR ocr = TesseractOCR.getInstance();
+    /** The related OCR — prefer RapidOCR (lighter, better CJK), fall back to Tesseract. */
+    private static final OCR ocr = pickOcr();
+
+    /** Choose the best available OCR engine. */
+    private static OCR pickOcr ()
+    {
+        final RapidOcrEngine rapid = RapidOcrEngine.getInstance();
+        if (rapid.isAvailable()) {
+            logger.info("Using RapidOCR engine (ONNX runtime)");
+            return rapid;
+        }
+
+        logger.info("RapidOCR not available, falling back to Tesseract");
+        return TesseractOCR.getInstance();
+    }
 
     //~ Constructors -------------------------------------------------------------------------------
     /** Not meant to be instantiated. */

@@ -27,10 +27,14 @@ import org.audiveris.omr.constant.ConstantSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
 
 import javax.swing.AbstractAction;
 import javax.swing.ActionMap;
@@ -38,7 +42,10 @@ import javax.swing.InputMap;
 import javax.swing.JComponent;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
+import javax.swing.JViewport;
 import javax.swing.KeyStroke;
+import javax.swing.SwingConstants;
+import javax.swing.ViewportLayout;
 
 /**
  * Class <code>ScrollView</code> contains a JScrollPane, which provides a comprehensive
@@ -83,11 +90,22 @@ public class ScrollView
      */
     public ScrollView ()
     {
+        // Use a centering viewport so the sheet is centred when smaller than the window
+        component.setViewport(new CenteredViewport());
+
         JScrollBar vertical = component.getVerticalScrollBar();
         vertical.setUnitIncrement(constants.unitIncrement.getValue());
 
         JScrollBar horizontal = component.getHorizontalScrollBar();
         horizontal.setUnitIncrement(constants.unitIncrement.getValue());
+
+        // Install smooth-scroll handler for trackpad (replaces the default integer-based one).
+        // Adapted from FlatLaf (Apache 2.0) and NetBeans SmoothScrollPaneUI (Apache 2.0).
+        // See: https://github.com/JFormDesigner/FlatLaf  (FlatScrollPaneUI.java)
+        //      https://github.com/apache/netbeans  (SmoothScrollPaneUI.java)
+        //      Pavel Fatin — "Scrolling with Pleasure"
+        component.setWheelScrollingEnabled(false); // we handle it ourselves
+        component.addMouseWheelListener(new SmoothWheelListener());
 
         bindKeys(component);
     }
@@ -332,7 +350,7 @@ public class ScrollView
     {
         private final Constant.Integer unitIncrement = new Constant.Integer(
                 "Pixels",
-                20,
+                64,
                 "Size of mouse wheel increment for ScrollView");
     }
 
@@ -421,6 +439,142 @@ public class ScrollView
         {
             final JScrollBar vertical = component.getVerticalScrollBar();
             vertical.setValue(vertical.getValue() - vertical.getUnitIncrement());
+        }
+    }
+
+    //---------------------//
+    // SmoothWheelListener //
+    //---------------------//
+    /**
+     * Pixel-precise mouse-wheel handler for smooth trackpad scrolling.
+     * <p>
+     * Adapted from FlatLaf (Apache 2.0, JFormDesigner/FlatLaf) and
+     * NetBeans SmoothScrollPaneUI (Apache 2.0, apache/netbeans).
+     * Uses {@code getPreciseWheelRotation()} so that fractional trackpad
+     * deltas (e.g. 0.1) produce proportional pixel movement instead of
+     * being rounded to 0 or 1 by the default Swing handler.
+     */
+    private class SmoothWheelListener
+            implements MouseWheelListener
+    {
+        @Override
+        public void mouseWheelMoved (MouseWheelEvent e)
+        {
+            // Let Rubber handle zoom (Ctrl/Cmd + scroll)
+            if (e.isControlDown() || e.isMetaDown()) {
+                return; // not consumed — Rubber will pick it up
+            }
+
+            JScrollBar scrollbar = e.isShiftDown()
+                    ? component.getHorizontalScrollBar()
+                    : component.getVerticalScrollBar();
+
+            if (scrollbar == null || !scrollbar.isVisible()) {
+                // Try the other axis
+                scrollbar = e.isShiftDown()
+                        ? component.getVerticalScrollBar()
+                        : component.getHorizontalScrollBar();
+                if (scrollbar == null || !scrollbar.isVisible()) {
+                    return;
+                }
+            }
+
+            double rotation = e.getPreciseWheelRotation();
+            int unitIncrement = scrollbar.getUnitIncrement(rotation < 0 ? -1 : 1);
+            int scrollAmount = e.getScrollAmount(); // typically 3
+
+            double delta = rotation * scrollAmount * unitIncrement;
+
+            // Cap to viewport size (prevents overshoot on sub-notch trackpad events)
+            JViewport viewport = component.getViewport();
+            if (viewport != null && Math.abs(rotation) < 1.0 + 1e-5) {
+                int viewportSize = (scrollbar.getOrientation() == SwingConstants.VERTICAL)
+                        ? viewport.getHeight()
+                        : viewport.getWidth();
+                delta = Math.max(-viewportSize, Math.min(delta, viewportSize));
+            }
+
+            int idelta = (int) Math.round(delta);
+
+            // Force at least 1px movement to prevent stalling (FlatLaf technique)
+            if (idelta == 0) {
+                if (rotation > 0) {
+                    idelta = 1;
+                } else if (rotation < 0) {
+                    idelta = -1;
+                }
+            }
+
+            int value = scrollbar.getValue();
+            int maxValue = scrollbar.getMaximum() - scrollbar.getVisibleAmount();
+            int newValue = Math.max(scrollbar.getMinimum(), Math.min(value + idelta, maxValue));
+
+            if (newValue != value) {
+                scrollbar.setValue(newValue);
+            }
+
+            e.consume();
+        }
+    }
+
+    //------------------//
+    // CenteredViewport //
+    //------------------//
+    /**
+     * A JViewport that centres its content when the content is smaller than the viewport.
+     * When the sheet is zoomed out enough to fit inside the window, it appears in the
+     * middle rather than anchored to the top-left corner.
+     * <p>
+     * IMPORTANT: Only re-centres on viewport resize, NOT on every layout pass.
+     * The previous version re-centred on every scroll event, causing the view to
+     * snap back to the centre.
+     */
+    private static class CenteredViewport
+            extends JViewport
+    {
+        /** Last known viewport size — re-centre only when this changes. */
+        private Dimension lastViewportSize = new Dimension(0, 0);
+
+        CenteredViewport ()
+        {
+            setLayout(new ViewportLayout()
+            {
+                @Override
+                public void layoutContainer (Container parent)
+                {
+                    super.layoutContainer(parent);
+
+                    JViewport vp = (JViewport) parent;
+                    Component v = vp.getView();
+
+                    if (v == null) {
+                        return;
+                    }
+
+                    Dimension vs = vp.getSize();
+                    Dimension cs = v.getPreferredSize();
+
+                    // Only centre when the content is smaller than the viewport
+                    boolean needsCenterX = vs.width > cs.width;
+                    boolean needsCenterY = vs.height > cs.height;
+
+                    if (!needsCenterX && !needsCenterY) {
+                        lastViewportSize.setSize(vs);
+                        return; // content fills viewport, no centering needed
+                    }
+
+                    // Re-centre only when viewport size changed (window resize / zoom),
+                    // not on scroll-triggered relayouts.
+                    boolean sizeChanged = !vs.equals(lastViewportSize);
+                    lastViewportSize.setSize(vs);
+
+                    if (sizeChanged || needsCenterX || needsCenterY) {
+                        int x = needsCenterX ? (vs.width - cs.width) / 2 : v.getX();
+                        int y = needsCenterY ? (vs.height - cs.height) / 2 : v.getY();
+                        v.setLocation(x, y);
+                    }
+                }
+            });
         }
     }
 }

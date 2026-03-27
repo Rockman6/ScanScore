@@ -172,7 +172,7 @@ tasks.register('macConvertIcons', Exec) {
 
     commandLine "iconutil",\
             "--convert", "icns",\
-            "--output", "build/Audiveris.icns",\
+            "--output", "build/ScanScore.icns",\
             "build/macos.iconset"
 }
 
@@ -243,7 +243,7 @@ tasks.jpackage {
 
     mac {
         dependsOn 'macConvertIcons'
-        icon = layout.buildDirectory.file("Audiveris.icns")
+        icon = layout.buildDirectory.file("ScanScore.icns")
 
         macPackageIdentifier = "org.audiveris.app"
         macPackageName = app.ext.programName

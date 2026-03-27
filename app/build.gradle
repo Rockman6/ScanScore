@@ -77,8 +77,8 @@ println "theTessdataTag: $tessdataTag"
 ext.programName     = rootProject.name
 ext.programId       = rootProject.name.toLowerCase()
 ext.programVersion  = "$project.version"
-ext.companyName     = "$programName Ltd."
-ext.companyId       = "${programName}Ltd"
+ext.companyName     = "Henry"
+ext.companyId       = "HenryDev"
 
 // Name of Java main class. 
 // The caller may have set the property on the gradle command line via a -PmainClass=foobar
@@ -86,7 +86,7 @@ if (project.hasProperty('mainClass')) {
     println "property mainClass: " + project.property('mainClass')
     ext.mainClass = project.property('mainClass')
 } else {
-    ext.mainClass = ext.programName
+    ext.mainClass = "Audiveris"
 }
 
 //--------------
@@ -123,6 +123,7 @@ dependencies {
         'com.itextpdf:itextpdf:5.5.13.2',
         'com.jgoodies:jgoodies-forms:1.9.0',
         'com.jgoodies:jgoodies-looks:2.7.0',
+        'com.formdev:flatlaf:3.4',
         'com.sun.xml.bind:jaxb-core:2.3.0.1',
         'com.sun.xml.bind:jaxb-impl:2.3.1',
         'gov.nist.math:jama:1.0.3',
@@ -221,7 +222,10 @@ application {
     // WARNING: Restricted methods will be blocked in a future release unless native access is enabled
     //
     applicationDefaultJvmArgs = ["--add-exports=java.desktop/sun.awt.image=ALL-UNNAMED",
-                                 "--enable-native-access=ALL-UNNAMED"]
+                                 "--add-exports=java.desktop/com.apple.eawt.event=ALL-UNNAMED",
+                                 "--enable-native-access=ALL-UNNAMED",
+                                 "-Xdock:name=ScanScore",
+                                 "-Dapple.awt.application.name=ScanScore"]
 }
 
 // Perhaps no longer needed?
@@ -242,7 +246,7 @@ allprojects {
 // Heap size (and other stuff) can be modified via a 'jvmLineArgs' on gradle command line
 tasks.run {
     minHeapSize = '512m'
-    maxHeapSize = '8g'
+    // No maxHeapSize cap — JVM manages memory automatically based on system RAM
 
     // Retrieve JVM arguments from jvmLineArgs property if any
     if (project.hasProperty("jvmLineArgs")) {

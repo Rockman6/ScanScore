@@ -326,6 +326,16 @@ public class PartwiseBuilder
     /** Factory for ProxyMusic entities. */
     private final ObjectFactory factory = new ObjectFactory();
 
+    /** Global duration divisor (LCM of all page divisors) for consistent MusicXML divisions. */
+    private int globalDivisor = 1;
+
+    /**
+     * Currently declared time signature as a rational fraction of a whole note.
+     * Kept in sync with every {@code <time>} element we emit.
+     * Used to set whole-measure-rest durations consistently with the declared time sig.
+     */
+    private Rational currentTimeSigRational = null;
+
     //~ Constructors -------------------------------------------------------------------------------
 
     /**
@@ -345,6 +355,74 @@ public class PartwiseBuilder
     }
 
     //~ Methods ------------------------------------------------------------------------------------
+
+    //------------------------//
+    // computeGlobalDivisor   //
+    //------------------------//
+    /**
+     * Compute the global duration divisor as the LCM of all page divisors.
+     * This ensures a single consistent {@code <divisions>} value throughout the MusicXML file.
+     */
+    private void computeGlobalDivisor ()
+    {
+        globalDivisor = 1;
+
+        logger.info("EXPORT-DIAG: computeGlobalDivisor start, stubs={}", score.getStubs().size());
+
+        for (SheetStub stub : score.getStubs()) {
+            final Integer sheetPageId = score.getSheetPageId(stub.getNumber());
+
+            if (sheetPageId == null) {
+                logger.info("EXPORT-DIAG: stub#{} -> no pageId, skipped", stub.getNumber());
+                continue;
+            }
+
+            final Page page = stub.getSheet().getPages().get(sheetPageId - 1);
+            page.resetDurationDivisor();
+            final Integer pageDivisor = page.getDurationDivisor();
+
+            logger.info("EXPORT-DIAG: stub#{} pageId={} pageDivisor={}", stub.getNumber(), sheetPageId, pageDivisor);
+
+            if (pageDivisor != null && pageDivisor > 0) {
+                globalDivisor = lcm(globalDivisor, pageDivisor);
+            }
+        }
+
+        logger.info("EXPORT-DIAG: Global MusicXML divisor={}, divisions(quarter)={}",
+                globalDivisor, globalSimpleDurationOf(Rational.QUARTER));
+    }
+
+    //------------------------//
+    // globalSimpleDurationOf //
+    //------------------------//
+    /**
+     * Convert a rational duration to integer ticks using the global divisor.
+     *
+     * @param value the rational note duration
+     * @return ticks in terms of the global divisions value
+     */
+    private int globalSimpleDurationOf (Rational value)
+    {
+        return value.num * (globalDivisor / value.den);
+    }
+
+    //---------//
+    // gcd     //
+    //---------//
+    private static int gcd (int a,
+                            int b)
+    {
+        return b == 0 ? a : gcd(b, a % b);
+    }
+
+    //---------//
+    // lcm     //
+    //---------//
+    private static int lcm (int a,
+                            int b)
+    {
+        return a / gcd(a, b) * b;
+    }
 
     //---------//
     // addSlur //
@@ -610,6 +688,17 @@ public class PartwiseBuilder
             Integer midiProgram = logicalPart.getMidiProgram();
 
             if (midiProgram == null) {
+                final InstrumentDictionary dict = InstrumentDictionary.getInstance();
+                String canonical = dict.normalize(logicalPart.getName());
+                if (canonical == null) {
+                    canonical = dict.normalize(logicalPart.getAbbreviation());
+                }
+                if (canonical != null) {
+                    midiProgram = dict.getMidiProgram(canonical);
+                }
+            }
+
+            if (midiProgram == null) {
                 midiProgram = logicalPart.getDefaultProgram();
             }
 
@@ -622,7 +711,9 @@ public class PartwiseBuilder
             MidiInstrument midiInstrument = factory.createMidiInstrument();
             pmScorePart.getMidiDeviceAndMidiInstrument().add(midiInstrument);
             midiInstrument.setId(scoreInstrument);
-            midiInstrument.setMidiChannel(1 + ((logicalPart.getId() - 1) % 16)); // in [1..16] range
+            // Skip channel 10 (reserved for drums in General MIDI)
+            final int rawChannel = 1 + ((logicalPart.getId() - 1) % 15);
+            midiInstrument.setMidiChannel(rawChannel >= 10 ? rawChannel + 1 : rawChannel); // in [1..16], skip 10
             midiInstrument.setMidiProgram(midiProgram);
             midiInstrument.setVolume(new BigDecimal(score.getVolume()));
 
@@ -924,7 +1015,7 @@ public class PartwiseBuilder
     {
         try {
             Backup backup = factory.createBackup();
-            backup.setDuration(new BigDecimal(current.page.simpleDurationOf(delta)));
+            backup.setDuration(new BigDecimal(globalSimpleDurationOf(delta)));
             current.pmMeasure.getNoteOrBackupOrForward().add(backup);
         } catch (Exception ex) {
             if (current.page.getDurationDivisor() != null) {
@@ -946,7 +1037,7 @@ public class PartwiseBuilder
     {
         try {
             Forward forward = factory.createForward();
-            forward.setDuration(new BigDecimal(current.page.simpleDurationOf(delta)));
+            forward.setDuration(new BigDecimal(globalSimpleDurationOf(delta)));
             forward.setVoice("" + current.voice.getId());
             current.pmMeasure.getNoteOrBackupOrForward().add(forward);
 
@@ -986,10 +1077,12 @@ public class PartwiseBuilder
                         count);
             }
 
-            // Measure duration
+            // Measure duration — use declared time sig, same logic as measure rests
             final AbstractTimeInter timeSig = stack.getCurrentTimeSignature();
-            final int dur = current.page.simpleDurationOf(
-                    timeSig != null ? timeSig.getTimeRational().getValue() : Rational.ONE); // Safer
+            Rational timeSigRat = (timeSig != null) ? timeSig.getTimeRational().getValue() : null;
+            if (timeSigRat == null) timeSigRat = currentTimeSigRational;
+            if (timeSigRat == null) timeSigRat = Rational.ONE;
+            final int dur = globalSimpleDurationOf(timeSigRat);
 
             // Create as many measures as needed
             for (int num = 0; num < count; num++) {
@@ -1905,7 +1998,7 @@ public class PartwiseBuilder
             // Need also a Sound element
             Sound sound = factory.createSound();
             direction.setSound(sound);
-            sound.setDivisions(new BigDecimal(current.page.simpleDurationOf(Rational.QUARTER)));
+            sound.setDivisions(new BigDecimal(globalSimpleDurationOf(Rational.QUARTER)));
 
             switch (marker.getShape()) {
                 case CODA -> {
@@ -2014,21 +2107,13 @@ public class PartwiseBuilder
                     processBarline(getBarlineOnLeft(measure), RightLeftMiddle.LEFT);
                 }
 
-                // Divisions?
-                if (isPageFirstMeasure) {
-                    try {
-                        getAttributes().setDivisions(
-                                new BigDecimal(current.page.simpleDurationOf(Rational.QUARTER)));
-                    } catch (Exception ex) {
-                        if (current.page.getDurationDivisor() == null) {
-                            logger.warn(
-                                    "Not able to infer division value for part {} in {}",
-                                    current.logicalPart.getPid(),
-                                    current.page);
-                        } else {
-                            logger.warn("Error on divisions in {}", current.page, ex);
-                        }
-                    }
+                // Divisions? Write once per part at its very first measure using the global value.
+                if (isScoreFirstMeasure) {
+                    final int divValue = globalSimpleDurationOf(Rational.QUARTER);
+                    getAttributes().setDivisions(new BigDecimal(divValue));
+                    logger.info("EXPORT-DIAG: [{} M{}] writing divisions={} (globalDivisor={})",
+                            current.logicalPart.getId(), stack.getScoreId(current.pageMeasureIdOffset),
+                            divValue, globalDivisor);
                 }
 
                 // Number of staves, if > 1
@@ -2042,11 +2127,28 @@ public class PartwiseBuilder
 
                 // Insert TimeSignature, if any
                 if (measure.getTimeSignature() != null) {
+                    logger.info("EXPORT-DIAG: [{} M{}] detected time sig: {}",
+                            current.logicalPart.getId(), stack.getScoreId(current.pageMeasureIdOffset),
+                            measure.getTimeSignature());
                     processTime(measure.getTimeSignature());
                 } else if (isScoreFirstMeasure) {
-                    // We need to insert a time sig!
-                    // TODO
-                    ///processTime(4,4,null);
+                    // No detected time signature — infer from measure content
+                    logger.info("EXPORT-DIAG: [{} M{}] no detected time sig — calling processInferredTime",
+                            current.logicalPart.getId(), stack.getScoreId(current.pageMeasureIdOffset));
+                    processInferredTime(stack);
+                }
+
+                // Pickup (anacrusis) detection: if first measure's actual duration < time sig,
+                // mark as implicit so MuseScore doesn't pad it with rests.
+                if (isScoreFirstMeasure && !stack.isImplicit() && currentTimeSigRational != null) {
+                    final Rational actual = stack.getActualDuration();
+                    if (actual != null && actual.num * currentTimeSigRational.den
+                            < currentTimeSigRational.num * actual.den) {
+                        current.pmMeasure.setImplicit(YesNo.YES);
+                        logger.info("EXPORT-DIAG: M1 actual={}/{} < timeSig={}/{} → marking implicit",
+                                actual.num, actual.den,
+                                currentTimeSigRational.num, currentTimeSigRational.den);
+                    }
                 }
             }
 
@@ -2413,13 +2515,31 @@ public class PartwiseBuilder
                     final Rational dur;
 
                     if (chord.isMeasureRest()) {
-                        Rational measureDur = current.measure.getStack().getActualDuration();
-                        dur = (measureDur != null) ? measureDur : Rational.ONE; // Not too bad...
+                        // Use the declared time sig duration so the rest fills exactly one measure.
+                        Rational measureDur = current.measure.getStack().getExpectedDuration();
+                        if (measureDur == null) {
+                            measureDur = currentTimeSigRational; // set when we emitted <time>
+                        }
+                        if (measureDur == null) {
+                            measureDur = current.measure.getStack().getActualDuration();
+                        }
+                        dur = (measureDur != null) ? measureDur : Rational.ONE;
+                        logger.info("EXPORT-DIAG: [{} M{}] MREST dur={} ticks={} (expected={} timeSig={} actual={})",
+                                current.logicalPart.getId(),
+                                current.measure.getStack().getScoreId(current.pageMeasureIdOffset),
+                                dur, globalSimpleDurationOf(dur),
+                                current.measure.getStack().getExpectedDuration(),
+                                currentTimeSigRational,
+                                current.measure.getStack().getActualDuration());
                     } else {
                         dur = chord.getDuration();
                     }
 
-                    current.pmNote.setDuration(new BigDecimal(current.page.simpleDurationOf(dur)));
+                    final int ticks = globalSimpleDurationOf(dur);
+                    if (chord.isMeasureRest() || logger.isDebugEnabled()) {
+                        // already logged above for measure rests
+                    }
+                    current.pmNote.setDuration(new BigDecimal(ticks));
                 } catch (Exception ex) {
                     if (current.page.getDurationDivisor() != null) {
                         logger.warn("Not able to get duration of {} in {}", note, current.page, ex);
@@ -2701,13 +2821,20 @@ public class PartwiseBuilder
             partList.getPartGroupOrScorePart().add(pmPart.getId());
         }
 
-        // Then, stub by stub, populate all ScorePartwise.Part instances in parallel
+        // Compute a single global divisions value (LCM of all page divisors)
+        // so that <divisions> stays constant throughout the entire MusicXML file.
         final List<SheetStub> scoreStubs = score.getStubs();
-        logger.info("Exporting sheet(s): {}", Book.ids(scoreStubs));
+        computeGlobalDivisor();
+
+        // Then, stub by stub, populate all ScorePartwise.Part instances in parallel
+        logger.info("EXPORT-DIAG: Exporting {} sheet(s): {}", scoreStubs.size(), Book.ids(scoreStubs));
+        logger.info("EXPORT-DIAG: Logical parts: {}", score.getLogicalParts().size());
 
         for (SheetStub stub : scoreStubs) {
             processStub(stub, partMap);
         }
+
+        logger.info("EXPORT-DIAG: Export complete. currentTimeSigRational={}", currentTimeSigRational);
     }
 
     //--------------//
@@ -3254,6 +3381,97 @@ public class PartwiseBuilder
         processTime(timeSig.getNumerator(), timeSig.getDenominator(), timeSig.getShape());
     }
 
+    //--------------------//
+    // processInferredTime//
+    //--------------------//
+    /**
+     * Emit a time signature inferred from the first complete measure when no explicit
+     * time signature was detected in the score.
+     *
+     * @param firstStack the first measure stack in the score (may be a pickup)
+     */
+    private void processInferredTime (MeasureStack firstStack)
+    {
+        // Priority 1: use expectedDuration — set by rhythm analysis from a detected time sig inter.
+        Rational dur = null;
+        final SystemInfo firstSystem = firstStack.getSystem();
+
+        logger.info("EXPORT-DIAG: processInferredTime — scanning {} stacks in first system for expectedDuration",
+                firstSystem.getStacks().size());
+
+        for (MeasureStack candidate : firstSystem.getStacks()) {
+            final Rational exp = candidate.getExpectedDuration();
+            final Rational actual = candidate.getActualDuration();
+            final Rational slots = candidate.getSlotsDuration();
+            logger.info("EXPORT-DIAG:   stack#{} expected={} actual={} slots={}",
+                    candidate.getIdValue(), exp, actual, slots);
+
+            if (exp != null && exp.num > 0) {
+                dur = exp;
+                logger.info("EXPORT-DIAG:   -> using expectedDuration={}", dur);
+                break;
+            }
+        }
+
+        // Priority 2: use the MODE (most frequent) actualDuration across all stacks on the
+        // first page. The first stack is often a pickup/anacrusis with a different length,
+        // so taking the MAX would be wrong (as we saw: first stack=3/4, regular stacks=1/2
+        // → wrong 3/4 inferred instead of correct 2/4). The mode correctly ignores outliers.
+        if (dur == null) {
+            logger.info("EXPORT-DIAG: No expectedDuration found — scanning all systems for mode actualDuration");
+
+            // Count occurrences of each distinct actualDuration value
+            final Map<String, int[]> freqMap = new LinkedHashMap<>(); // key -> [count, num, den]
+
+            for (SystemInfo sys : firstSystem.getSheet().getSystems()) {
+                for (MeasureStack candidate : sys.getStacks()) {
+                    final Rational actual = candidate.getActualDuration();
+                    final Rational slots = candidate.getSlotsDuration();
+
+                    logger.info("EXPORT-DIAG:   sys{} stack#{} actual={} slots={}",
+                            sys.getId(), candidate.getIdValue(), actual, slots);
+
+                    if (actual != null && actual.num > 0) {
+                        // Reduce to canonical form for grouping
+                        final int g = gcd(Math.abs(actual.num), actual.den);
+                        final String key = (actual.num / g) + "/" + (actual.den / g);
+                        freqMap.computeIfAbsent(key, k -> new int[]{0, actual.num / g, actual.den / g})[0]++;
+                        logger.info("EXPORT-DIAG:   -> freq[{}]={}", key, freqMap.get(key)[0]);
+                    }
+                }
+            }
+
+            // Pick the most frequent duration
+            int maxCount = 0;
+            for (int[] entry : freqMap.values()) {
+                if (entry[0] > maxCount) {
+                    maxCount = entry[0];
+                    dur = new Rational(entry[1], entry[2]);
+                }
+            }
+
+            if (dur != null) {
+                logger.info("EXPORT-DIAG: Mode actualDuration={} (appeared {} times)", dur, maxCount);
+            }
+        }
+
+        if (dur != null && dur.num > 0) {
+            // Convert rational duration (fraction of whole note) to beats/beat-type
+            if (dur.den <= 4) {
+                processTime(dur.num * 4 / dur.den, 4, null);
+            } else {
+                processTime(dur.num, dur.den, null);
+            }
+
+            logger.info("EXPORT-DIAG: Inferred time sig written as {}/{} (from dur={})",
+                    currentTimeSigRational.num, currentTimeSigRational.den, dur);
+        } else {
+            // Final fallback: 4/4.
+            processTime(4, 4, null);
+            logger.warn("EXPORT-DIAG: No time signature detected; defaulting to 4/4");
+        }
+    }
+
     //-------------//
     // processTime //
     //-------------//
@@ -3281,6 +3499,9 @@ public class PartwiseBuilder
 
         final List<Time> times = getAttributes().getTime();
         times.add(time);
+
+        // Track the declared time sig so measure-rest durations stay consistent.
+        currentTimeSigRational = new Rational(num, den);
     }
 
     //---------------//

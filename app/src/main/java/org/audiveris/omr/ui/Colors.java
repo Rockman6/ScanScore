@@ -163,7 +163,7 @@ public abstract class Colors
     public static final Color SHEET_NOT_OK = Color.RED;
 
     /** Color for OK sheet tab. */
-    public static final Color SHEET_OK = Color.BLACK;
+    public static final Color SHEET_OK = new Color(0, 140, 0);
 
     /** Time slot. */
     public static final Color SLOT = new Color(192, 192, 192, alpha);

@@ -30,7 +30,6 @@ import org.audiveris.omr.glyph.dynamic.Filament;
 import org.audiveris.omr.glyph.ui.EvaluationBoard;
 import org.audiveris.omr.glyph.ui.GlyphsController;
 import org.audiveris.omr.glyph.ui.NestView;
-import org.audiveris.omr.glyph.ui.SymbolGlyphBoard;
 import org.audiveris.omr.lag.BasicLag;
 import org.audiveris.omr.lag.Lag;
 import org.audiveris.omr.lag.Lags;
@@ -52,7 +51,6 @@ import org.audiveris.omr.sig.inter.Inters;
 import org.audiveris.omr.sig.relation.Relation;
 import org.audiveris.omr.sig.relation.Rhythm;
 import org.audiveris.omr.sig.relation.Support;
-import org.audiveris.omr.sig.ui.InterBoard;
 import org.audiveris.omr.sig.ui.InterController;
 import org.audiveris.omr.sig.ui.InterEditor;
 import org.audiveris.omr.sig.ui.InterService;
@@ -160,7 +158,7 @@ public class SheetEditor
         view.setLocationService(sheet.getLocationService());
 
         List<Board> boards = new ArrayList<>();
-        boards.add(new PixelBoard(sheet, constants.selectPixelBoard.isSet()));
+        // PixelBoard removed — not needed by end users
 
         Lag hLag = sheet.getLagManager().getLag(Lags.HLAG);
 
@@ -200,9 +198,9 @@ public class SheetEditor
             boards.add(new SectionBoard(vLag, constants.selectVerticalSectionBoard.isSet()));
         }
 
-        boards.add(new SymbolGlyphBoard(glyphsController, constants.selectGlyphBoard.isSet()));
-        boards.add(new InterBoard(sheet, constants.selectInterBoard.isSet()));
-        boards.add(shapeBoard = new ShapeBoard(sheet, this, constants.selectShapeBoard.isSet()));
+        // GlyphBoard, InterBoard, ShapeBoard removed from visible panel (not needed by end users)
+        // ShapeBoard still instantiated — required for shape history and keyboard input handling
+        shapeBoard = new ShapeBoard(sheet, this, false);
         boards.add(
                 evaluationBoard = new EvaluationBoard(
                         true,
@@ -529,10 +527,6 @@ public class SheetEditor
     private static class Constants
             extends ConstantSet
     {
-        private final Constant.Boolean selectPixelBoard = new Constant.Boolean(
-                false,
-                "Should we select Pixel board by default?");
-
         private final Constant.Boolean selectHorizontalSectionBoard = new Constant.Boolean(
                 false,
                 "Should we select Horizontal Section board by default?");
@@ -541,17 +535,6 @@ public class SheetEditor
                 false,
                 "Should we select Vertical Section board by default?");
 
-        private final Constant.Boolean selectGlyphBoard = new Constant.Boolean(
-                false,
-                "Should we select Glyph board by default?");
-
-        private final Constant.Boolean selectInterBoard = new Constant.Boolean(
-                true,
-                "Should we select Inter board by default?");
-
-        private final Constant.Boolean selectShapeBoard = new Constant.Boolean(
-                true,
-                "Should we select Shape board by default?");
 
         private final Constant.Boolean selectBasicClassifierBoard = new Constant.Boolean(
                 true,
@@ -917,14 +900,17 @@ public class SheetEditor
             }
 
             if (viewParams.isInputPainting()) {
-                // Sections
+                // Sections — skip those outside the clip region
                 final boolean drawBorders = viewParams
                         .getSelectionMode() == SelectionMode.MODE_SECTION;
                 final Stroke oldStroke = (drawBorders) ? UIUtil.setAbsoluteStroke(g, 1f) : null;
+                final Rectangle sectionClip = g.getClipBounds();
 
                 for (Lag lag : lags) {
-                    // Render all sections, using H/V assigned colors
                     for (Section section : lag.getEntities()) {
+                        if (sectionClip != null && !sectionClip.intersects(section.getBounds())) {
+                            continue; // Skip off-screen sections
+                        }
                         section.render(g, drawBorders, null);
                     }
                 }

@@ -75,6 +75,7 @@ import org.jdesktop.application.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.Desktop;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
@@ -601,6 +602,94 @@ public class BookActions
     public void dumpEventServices (ActionEvent e)
     {
         StubsController.getInstance().dumpCurrentSheetServices();
+    }
+
+    //-------------//
+    // exportScore //
+    //-------------//
+    /**
+     * Export the current score, asking the user to choose format (MusicXML or MIDI)
+     * and save location.
+     *
+     * @param e the event that triggered this action
+     * @return the task to launch in background
+     */
+    @Action(enabledProperty = BOOK_IDLE)
+    public Task<Void, Void> exportScore (ActionEvent e)
+    {
+        final Book book = StubsController.getCurrentBook();
+
+        if (book == null) {
+            return null;
+        }
+
+        // Format chooser dialog
+        final String[] options = {"MusicXML (.mxl)", "MIDI (.mid)"};
+        final int choice = JOptionPane.showOptionDialog(
+                OMR.gui.getFrame(),
+                "Choose export format:",
+                "Export Score",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.PLAIN_MESSAGE,
+                null,
+                options,
+                options[0]);
+
+        if (choice < 0) {
+            return null; // cancelled
+        }
+
+        // Use Desktop as reliable default save location
+        final java.io.File desktop = new java.io.File(
+                System.getProperty("user.home"), "Desktop");
+
+        if (choice == 0) {
+            // MusicXML
+            final String ext = BookManager.getExportExtension(); // ".mxl" or ".xml"
+            final javax.swing.JFileChooser fc = new javax.swing.JFileChooser(desktop);
+            fc.setDialogTitle("Export MusicXML");
+            fc.setSelectedFile(new java.io.File(desktop, book.getRadix() + ext));
+            fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                    "MusicXML files (*" + ext + ")", ext.replace(".", "")));
+            fc.setFileSelectionMode(javax.swing.JFileChooser.FILES_ONLY);
+
+            if (fc.showSaveDialog(OMR.gui.getFrame()) != javax.swing.JFileChooser.APPROVE_OPTION) {
+                return null;
+            }
+
+            final Path bookPathSansExt = ExportPattern.getPathSansExt(
+                    fc.getSelectedFile().toPath());
+            return new ExportBookTask(book, bookPathSansExt);
+        }
+
+        // MIDI
+        final javax.swing.JFileChooser fc = new javax.swing.JFileChooser(desktop);
+        fc.setDialogTitle("Export MIDI");
+        fc.setSelectedFile(new java.io.File(desktop, book.getRadix() + ".mid"));
+        fc.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "MIDI files (*.mid)", "mid", "midi"));
+        fc.setFileSelectionMode(javax.swing.JFileChooser.FILES_ONLY);
+
+        if (fc.showSaveDialog(OMR.gui.getFrame()) != javax.swing.JFileChooser.APPROVE_OPTION) {
+            return null;
+        }
+
+        return new ExportMidiTask(book, fc.getSelectedFile().toPath());
+    }
+
+    //-----------//
+    // saveProject //
+    //-----------//
+    /**
+     * Save the current scan project (delegates to saveBook internally).
+     *
+     * @param e the event that triggered this action
+     * @return the UI task to perform
+     */
+    @Action(enabledProperty = BOOK_MODIFIED_OR_UPGRADED)
+    public Task<Void, Void> saveProject (ActionEvent e)
+    {
+        return saveBook(e);
     }
 
     //------------//
@@ -2178,6 +2267,152 @@ public class BookActions
             }
 
             return null;
+        }
+
+        @Override
+        protected void succeeded (Void result)
+        {
+            final Path exportSansExt = book.getExportPathSansExt();
+            if (exportSansExt == null) {
+                return;
+            }
+
+            final java.io.File dir = exportSansExt.getParent().toFile();
+            SwingUtilities.invokeLater(() -> {
+                final int choice = JOptionPane.showOptionDialog(
+                        OMR.gui.getFrame(),
+                        "MusicXML exported to:\n" + dir.getAbsolutePath(),
+                        "Export Complete",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.INFORMATION_MESSAGE,
+                        null,
+                        new String[]{"Open Folder", "OK"},
+                        "OK");
+                if (choice == 0) {
+                    try {
+                        Desktop.getDesktop().open(dir);
+                    } catch (Exception ex) {
+                        logger.warn("Cannot open folder {}", dir, ex);
+                    }
+                }
+            });
+        }
+    }
+
+    //-----------------//
+    // ExportMidiTask  //
+    //-----------------//
+    /**
+     * Export a MusicXML file to MIDI by calling MuseScore 4's command-line converter.
+     */
+    private static class ExportMidiTask
+            extends VoidTask
+    {
+        final Book book;
+
+        final Path midiTarget;
+
+        ExportMidiTask (Book book, Path midiTarget)
+        {
+            this.book = book;
+            this.midiTarget = midiTarget;
+        }
+
+        @Override
+        protected Void doInBackground ()
+            throws InterruptedException
+        {
+            try {
+                LogUtil.start(book);
+
+                // Step 1: export to a temp MXL
+                final Path tempDir = Files.createTempDirectory("audiveris-midi");
+                final Path tempSansExt = tempDir.resolve(book.getRadix());
+                final Path originalExportPath = book.getExportPathSansExt();
+                book.setExportPathSansExt(tempSansExt);
+
+                if (!checkParameters(book)) {
+                    book.setExportPathSansExt(originalExportPath);
+                    return null;
+                }
+
+                book.export(book.getValidSelectedStubs(), book.getScores());
+                book.setExportPathSansExt(originalExportPath);
+
+                // Step 2: find the exported MXL file
+                final String bookName = book.getRadix();
+                final java.util.Optional<Path> mxlOpt;
+
+                try (java.util.stream.Stream<Path> stream = Files.list(tempDir)) {
+                    mxlOpt = stream
+                            .filter(f -> {
+                                final String n = f.getFileName().toString();
+                                return n.startsWith(bookName)
+                                        && (n.endsWith(".mxl") || n.endsWith(".xml"));
+                            })
+                            .findFirst();
+                }
+
+                if (mxlOpt.isEmpty()) {
+                    logger.warn("MIDI export: no MXL produced for '{}'", bookName);
+                    return null;
+                }
+
+                // Step 3: convert via MuseScore CLI
+                final String mscore = "/Applications/MuseScore 4.app/Contents/MacOS/mscore";
+                Files.createDirectories(midiTarget.getParent());
+                final ProcessBuilder pb = new ProcessBuilder(
+                        mscore,
+                        "--export-to", midiTarget.toString(),
+                        mxlOpt.get().toString());
+                pb.redirectErrorStream(true);
+                final Process proc = pb.start();
+                final int exit = proc.waitFor();
+
+                if (exit == 0) {
+                    logger.info("MIDI exported to {}", midiTarget);
+                    exportedOk = true;
+                } else {
+                    logger.warn("MuseScore MIDI conversion failed (exit {}). "
+                            + "Is MuseScore 4 installed at /Applications/MuseScore 4.app?", exit);
+                }
+            } catch (Throwable ex) {
+                logger.warn("Error in ExportMidiTask {}", ex.toString(), ex);
+            } finally {
+                LogUtil.stopBook();
+            }
+
+            return null;
+        }
+
+        private volatile boolean exportedOk = false;
+
+        @Override
+        protected void succeeded (Void result)
+        {
+            if (!exportedOk) {
+                return;
+            }
+
+            final java.io.File dir = midiTarget.getParent().toFile();
+            SwingUtilities.invokeLater(() -> {
+                final int choice = JOptionPane.showOptionDialog(
+                        OMR.gui.getFrame(),
+                        "MIDI exported to:\n" + midiTarget.toAbsolutePath(),
+                        "Export Complete",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.INFORMATION_MESSAGE,
+                        null,
+                        new String[]{"Open Folder", "OK"},
+                        "OK");
+                if (choice == 0) {
+                    try {
+                        Desktop.getDesktop().open(dir);
+                    } catch (Exception ex) {
+                        logger.warn("Cannot open folder {}", dir, ex);
+                    }
+                }
+            });
         }
     }
 

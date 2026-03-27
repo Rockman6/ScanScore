@@ -40,7 +40,7 @@ import static org.bytedeco.leptonica.global.leptonica.pixDestroy;
 import static org.bytedeco.leptonica.global.leptonica.pixReadMemTiff;
 import org.bytedeco.tesseract.ResultIterator;
 import org.bytedeco.tesseract.TessBaseAPI;
-import static org.bytedeco.tesseract.global.tesseract.OEM_TESSERACT_ONLY;
+import static org.bytedeco.tesseract.global.tesseract.OEM_DEFAULT;
 import static org.bytedeco.tesseract.global.tesseract.RIL_SYMBOL;
 import static org.bytedeco.tesseract.global.tesseract.RIL_TEXTLINE;
 import static org.bytedeco.tesseract.global.tesseract.RIL_WORD;
@@ -409,9 +409,9 @@ public class TesseractOrder
                 }
             }
 
-            if (api.Init(ocrFolder.toString(), langSpec, OEM_TESSERACT_ONLY) != 0) {
+            if (api.Init(ocrFolder.toString(), langSpec, OEM_DEFAULT) != 0) {
                 logger.warn(
-                        "TesseractOrder. Could not initialize TessBaseAPI languages: {} in legacy mode",
+                        "TesseractOrder. Could not initialize TessBaseAPI languages: {}",
                         langSpec);
 
                 return finish(null);

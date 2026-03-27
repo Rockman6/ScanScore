@@ -412,7 +412,7 @@ public class Main
     {
         return String.join(
                 WellKnowns.LINE_SEPARATOR,
-                "Audiveris",
+                "ScanScore",
                 "- Version:      " + WellKnowns.TOOL_REF,
                 "- Commit:       " + WellKnowns.TOOL_BUILD,
                 "- OS:           " + System.getProperty("os.name") + //

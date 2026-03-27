@@ -1,108 +1,102 @@
-# WARNING
-### Beware of site [audiveris.com](https://audiveris.com/)!
+# ScanScore — Music Scanner
 
-```diff
-- The site https://audiveris.com  (note the `.com` extension)
--  has nothing to do with Audiveris and seems to be a fraudulent site.
+**ScanScore** is an open-source optical music recognition (OMR) application that converts scanned sheet music images into editable digital formats (MusicXML, MIDI).
+
+Built on [Audiveris](https://github.com/Audiveris/audiveris), ScanScore adds modern OCR, LLM-powered instrument identification, a smoother UI, and better support for multilingual scores (Chinese, English, Italian, etc.).
+
+## Features
+
+- **Optical Music Recognition** — Detects notes, rests, clefs, time signatures, dynamics, slurs, and more from score images or PDFs
+- **RapidOCR Integration** — Lightweight ONNX-based text recognition (~300 MB) replacing Tesseract for better multilingual support
+- **LLM Instrument Identification** — Uses a local Ollama model to identify instrument names from OCR text, including transposition detection
+- **MusicXML & MIDI Export** — Export recognized scores to MusicXML 4.0 or MIDI for use in notation software (MuseScore, Finale, Sibelius, etc.)
+- **Interactive Editor** — Fix recognition errors with a visual editor; add, remove, or modify detected symbols
+- **Multi-page Scores** — Handle orchestral scores with hundreds of pages
+- **Smooth UI** — Pixel-precise trackpad scrolling, Cmd+scroll zoom, optimized rendering with clip-rect culling
+- **Cross-platform** — macOS, Windows, Linux
+
+## Quick Start
+
+### Prerequisites
+
+- **Java 21+** (JDK)
+- **Gradle** (included via wrapper)
+- **Python 3.11** + RapidOCR (optional, for enhanced text recognition)
+
+### Build & Run
+
+```bash
+git clone https://github.com/YourUsername/scanscore.git
+cd scanscore
+./gradlew :app:run
 ```
 
-![](https://github.com/Audiveris/audiveris.github.io/blob/master/assets/images/audiveris.com.png)
+### Set Up RapidOCR (Optional)
 
-```diff
-- The site is aesthetically pleasing
--  and looks like an advertisement for Audiveris software.
-- However, users report that links redirect to pages
--  dedicated to cryptocurrencies, sports betting, etc.
-- It has all the hallmarks of a phishing site…
+```bash
+python3.11 -m venv ocr-env
+source ocr-env/bin/activate
+pip install rapidocr-onnxruntime
 ```
 
-![](https://github.com/Audiveris/docs/blob/master/images/SplashLogo.png)
-Logo crafted by [Katka](https://www.facebook.com/katkastreetart/)
+The app will automatically detect and use RapidOCR if the virtualenv is present. Falls back to Tesseract otherwise.
 
-# Audiveris - Open-source Optical Music Recognition
+### Set Up LLM Instrument ID (Optional)
 
-The goal of an OMR application is to allow the end-user to transcribe a score image into
-its symbolic counterpart.
-This opens the door to its further use by many kinds of digital processing such as
-playback, music edition, searching, republishing, etc.
+```bash
+# Install Ollama (https://ollama.com)
+ollama pull qwen2.5:7b
+```
 
-The Audiveris application is built around the tight integration of two main components:
-an OMR engine and an OMR editor.
-- The OMR engine combines many techniques, depending on the type of entities to be recognized
--- *ad-hoc* methods for lines, image morphological closing for beams, external OCR for texts,
-template matching for heads, neural network for all other fixed-size shapes.   
-Significant progresses have been made, especially regarding poor-quality scores,
-but experience tells us that a 100% recognition ratio is simply out of reach in many cases.
-- The OMR editor thus comes into play to overcome engine weaknesses in convenient ways.
-The user can preselect processing switches to adapt the OMR engine before launching the
-transcription of the current score.
-Then the remaining mistakes can generally be quickly fixed
-via the manual editing of a few music symbols.
+When running, the app connects to `localhost:11434` to identify instrument names from OCR text.
 
-## Key characteristics
+## Usage
 
-* Good recognition efficiency on real-world quality scores (as those seen on the [IMSLP][imslp] site)
-* Effective support for large scores (with up to hundreds of pages)
-* Convenient user-oriented interface to detect and correct most OMR errors
-* Available on Windows, Linux and macOS
-* Open source
+1. **Open** a score image (PNG, JPG, TIFF) or PDF via `File > Input`
+2. **Transcribe** — the OMR engine runs through detection steps automatically
+3. **Edit** — fix any recognition errors in the interactive editor
+4. **Export** — `File > Export` to MusicXML or MIDI
 
-The core of engine music information (OMR data) is fully documented and made publicly available,
-either directly via XML-based `.omr` project files or via the Java API of this software.   
-Audiveris comes with an integrated exporter to write (a subset of) this OMR data into
-[MusicXML][musicxml] 4.0 format.
-In the future, other exporters are expected to build upon OMR data to support other target formats.
+### Keyboard Shortcuts
 
-## Stable releases
+| Action | Shortcut |
+|--------|----------|
+| Zoom in/out | `Cmd + scroll` or `Ctrl + +/-` |
+| Scroll | Two-finger trackpad scroll |
+| Fit page | `Cmd + F` |
 
-On a rather regular basis, typically every 6 to 12 months, a new release is made available
-on the dedicated [Audiveris Releases][releases] page.
+## Architecture
 
-The goal of a release is to provide significant improvements, well tested and integrated,
-resulting in a software as easy as possible to install and use.
+```
+app/src/main/java/org/audiveris/omr/
+├── score/          # MusicXML export, instrument LLM, score reduction
+├── sheet/          # Sheet processing pipeline (20 steps: LOAD → PAGE)
+├── sig/            # Symbol Interpretation Graph (SIG) — detected elements
+├── text/           # OCR layer (RapidOCR / Tesseract)
+│   └── rapidocr/   # RapidOCR engine (ONNX runtime)
+├── ui/             # Swing UI, smooth scrolling, rendering
+└── step/           # Processing step definitions
+```
 
-Since the release 5.5, an installer is provided for each of the main OSes
-(**Windows**, **Linux** and **macOS**) and comes with a pre-installed Java Runtime Environment (JRE).
-You can download any installer file from the **Assets** section, at the end of the chosen release:
+### Processing Pipeline
 
-| OS name | Installer file extension |
-| :---    | :---   |
-| Windows | `.msi` |
-| Linux   | `.deb` |
-| macOS   | `.dmg` |
+```
+LOAD → BINARY → SCALE → GRID → HEADERS → STEM_SEEDS → BEAMS →
+LEDGERS → HEADS → STEMS → REDUCTION → CUE_BEAMS → TEXTS →
+MEASURES → CHORDS → CURVES → SYMBOLS → LINKS → RHYTHMS → PAGE
+```
 
-Additionally for **Linux**, a _flatpak_ package, also with a suitable JRE included,
-can be installed from the [Flathub] site.
+## Credits
 
-See installers details in the handbook [installation] section.
+- **[Audiveris](https://github.com/Audiveris/audiveris)** — The original OMR engine by Herve Bitteur (AGPL-3.0)
+- **[RapidOCR](https://github.com/RapidAI/RapidOCR)** — ONNX-based OCR (Apache 2.0)
+- **[FlatLaf](https://github.com/JFormDesigner/FlatLaf)** — Modern Swing look & feel (Apache 2.0)
+- **[Apache NetBeans](https://github.com/apache/netbeans)** — Smooth scroll implementation reference (Apache 2.0)
+- **[Ollama](https://ollama.com)** — Local LLM runtime
+- Smooth scrolling adapted from [Pavel Fatin — "Scrolling with Pleasure"](https://pavelfatin.com/scrolling-with-pleasure/)
 
-## Development versions
+## License
 
-The Audiveris project is developed on GitHub, the site you are reading.  
-Any one can clone, build and run this software. 
-The needed tools are `git`, `gradle` and a Java Development Kit (`jdk`),
-as described in the handbook [sources section][sources].
+This project is licensed under the **GNU Affero General Public License v3.0** — see [LICENSE](LICENSE) for details.
 
-There are two main branches in the Audiveris project:
-- the `master` branch is the GitHub default branch;
-we use it for releases, and only for them.
-- the `development` branch is the one where all developments continuously take place;
-Periodically, when a release is to be made, we merge the development branch into the master branch.
-
-See details in the [Wiki article][workflow] dedicated to the chosen development workflow.
-
-## Further Information
-
-- For users: the Audiveris [User Handbook][handbook].
-- For developers: the [Project Structure][project] and the [Wiki][audiveris-wiki] set of articles.
-
-[audiveris-wiki]: https://github.com/Audiveris/audiveris/wiki
-[Flathub]:        https://flathub.org/apps/org.audiveris.audiveris
-[handbook]:       https://audiveris.github.io/audiveris/
-[imslp]:          https://imslp.org/
-[installation]:   https://audiveris.github.io/audiveris/_pages/tutorials/install/binaries/
-[musicxml]:       http://www.musicxml.com/
-[project]:        project-structure.md
-[releases]:       https://github.com/Audiveris/audiveris/releases
-[sources]:        https://audiveris.github.io/audiveris/_pages/tutorials/install/sources/
-[workflow]:       https://github.com/Audiveris/audiveris/wiki/Git-Workflow
+ScanScore is a fork of [Audiveris](https://github.com/Audiveris/audiveris), which is also AGPL-3.0 licensed.

@@ -124,15 +124,37 @@ public class TesseractOCR
             final Path dir = Paths.get(tessPrefix);
 
             if (Files.isDirectory(dir)) {
+                logger.info("Using tessdata from TESSDATA_PREFIX: {}", dir);
                 return dir;
             }
         }
 
-        // Second, test or create the Audiveris user config tessdata folder
+        // Second, test the Audiveris user config tessdata folder
         final Path userConfigTessdata = WellKnowns.CONFIG_FOLDER.resolve(TESSDATA);
-        if (Files.isDirectory(userConfigTessdata)) {
+        logger.info("Checking config tessdata at: {}", userConfigTessdata);
+        if (Files.isDirectory(userConfigTessdata) && hasTrainedData(userConfigTessdata)) {
+            logger.info("Using tessdata from config: {}", userConfigTessdata);
             return userConfigTessdata;
-        } else {
+        }
+
+        // Third, check common system locations (Homebrew on macOS, Linux packages)
+        final String[] commonPaths = {
+                "/opt/homebrew/share/tessdata",
+                "/usr/local/share/tessdata",
+                "/usr/share/tesseract-ocr/4.00/tessdata",
+                "/usr/share/tesseract-ocr/5/tessdata",
+                "/usr/share/tessdata"
+        };
+        for (String path : commonPaths) {
+            final Path dir = Paths.get(path);
+            if (Files.isDirectory(dir) && hasTrainedData(dir)) {
+                logger.info("Using tessdata from system: {}", dir);
+                return dir;
+            }
+        }
+
+        // Fourth, create the config folder as fallback
+        if (!Files.isDirectory(userConfigTessdata)) {
             try {
                 logger.info("Creating OCR folder {}", userConfigTessdata);
                 return Files.createDirectories(userConfigTessdata);
@@ -144,6 +166,16 @@ public class TesseractOCR
         logger.warn(ocrNotFoundMsg);
 
         return null;
+    }
+
+    /** Check if a tessdata directory contains at least one .traineddata file. */
+    private boolean hasTrainedData (Path dir)
+    {
+        try {
+            return Files.list(dir).anyMatch(p -> p.toString().endsWith(".traineddata"));
+        } catch (IOException ex) {
+            return false;
+        }
     }
 
     //-----------------------//

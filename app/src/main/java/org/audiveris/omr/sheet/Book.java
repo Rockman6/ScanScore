@@ -2013,7 +2013,7 @@ public class Book
                             } catch (Exception ex) {
                                 // Exception raised on stub
                                 // Let processing continue for the other stubs
-                                logger.warn("Error processing stub");
+                                logger.warn("Error processing stub", ex);
                                 someFailure = true;
                             } finally {
                                 stub.printWatch(false);
@@ -2041,7 +2041,8 @@ public class Book
                         } catch (Exception ex) {
                             // Exception raised on stub
                             // Let processing continue for the other stubs
-                            logger.warn("Error processing stub");
+                            logger.warn("Error processing stub: {}", ex.toString());
+                            ex.printStackTrace();
                             someFailure = true;
                         } finally {
                             stub.printWatch(false);

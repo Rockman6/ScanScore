@@ -1,5 +1,14 @@
 syntax: glob
 
+# Python virtualenv (OCR runtime — users install separately)
+ocr-env/
+
+# Test/output artifacts
+*.mxl
+*.mid
+*.omr
+diagnostic.zip
+
 # Ignore .jpg and .pdf under the src directory since they are produced via umlet
 # Images handled by conf management should use other suffix (.png for example)
 src/**/*.jpg

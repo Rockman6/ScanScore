@@ -2594,7 +2594,7 @@ public class BarsRetriever
 
         private final Constant.Integer largeSystemStaffCount = new Constant.Integer(
                 "staves",
-                4,
+                8,
                 "Minimum number of staves for a system to be large");
 
         private final Scale.Fraction minThinThickDelta = new Scale.Fraction(
@@ -2686,7 +2686,7 @@ public class BarsRetriever
                 "Is bar connection mandatory for a true brace group?");
 
         private final Scale.Fraction minSeparateStaffGutter = new Scale.Fraction(
-                2.5,
+                1.5,
                 "Minimum vertical gap between two part staves to be separated");
 
         // For brackets ----------------------------------------------------------------------------

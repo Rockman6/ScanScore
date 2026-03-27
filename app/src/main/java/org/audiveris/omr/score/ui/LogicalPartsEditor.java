@@ -24,6 +24,7 @@ package org.audiveris.omr.score.ui;
 import org.audiveris.omr.OMR;
 import org.audiveris.omr.constant.Constant;
 import org.audiveris.omr.constant.ConstantSet;
+import org.audiveris.omr.score.InstrumentDictionary;
 import org.audiveris.omr.score.LogicalPart;
 import org.audiveris.omr.score.MidiAbstractions;
 import org.audiveris.omr.score.PageNumber;
@@ -247,6 +248,75 @@ public class LogicalPartsEditor
         setModified(true);
     }
 
+    //-----------//
+    // orchestra //
+    //-----------//
+    /**
+     * Pre-fill the parts list with a standard symphony orchestra layout.
+     *
+     * @param e the event that triggered this action
+     */
+    @Action
+    public void orchestra (ActionEvent e)
+    {
+        if (model.size() > 0) {
+            final int confirm = JOptionPane.showConfirmDialog(
+                    dialog,
+                    "Replace current parts with standard orchestra layout?",
+                    "Orchestra Template",
+                    JOptionPane.YES_NO_OPTION);
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+
+        // Remove all rows from bottom up
+        for (int i = model.size() - 1; i >= 0; i--) {
+            model.remove(i);
+        }
+
+        final InstrumentDictionary dict = InstrumentDictionary.getInstance();
+
+        // Standard symphony orchestra layout (top to bottom)
+        final String[][] parts = {
+            { "Flute",        "Fl."    },
+            { "Oboe",         "Ob."    },
+            { "Clarinet",     "Cl."    },
+            { "Bassoon",      "Bsn."   },
+            { "French Horn",  "Hn."    },
+            { "Trumpet",      "Tpt."   },
+            { "Trombone",     "Tbn."   },
+            { "Tuba",         "Tba."   },
+            { "Timpani",      "Timp."  },
+            { "Violin",       "Vl. I"  },
+            { "Violin",       "Vl. II" },
+            { "Viola",        "Vla."   },
+            { "Cello",        "Vc."    },
+            { "Double Bass",  "Cb."    },
+        };
+
+        for (String[] entry : parts) {
+            final String name = entry[0];
+            final String abbrev = entry[1];
+            final LogicalPart logical = new LogicalPart(
+                    0, 1, Arrays.asList(new StaffConfig(5, false)));
+            logical.setName(name);
+            logical.setAbbreviation(abbrev);
+            final Integer midi = dict.getMidiProgram(name);
+            if (midi != null) {
+                logical.setMidiProgram(midi);
+            }
+            model.add(logical);
+        }
+
+        if (model.size() > 0) {
+            table.getSelectionModel().setSelectionInterval(0, 0);
+        }
+
+        model.fireTableDataChanged();
+        setModified(true);
+    }
+
     //-----------------//
     // buildButtonPane //
     //-----------------//
@@ -263,7 +333,7 @@ public class LogicalPartsEditor
 
         // NOTA: Changing a name here implies to change the name of the corresponding method
         final String[] actions = new String[] { "add", "duplicate", "remove", "moveUp", "moveDown",
-                "save", "lock" };
+                "orchestra", "save", "lock" };
 
         final StringBuilder rowSpec = new StringBuilder();
         for (int i = 0; i < actions.length; i++) {

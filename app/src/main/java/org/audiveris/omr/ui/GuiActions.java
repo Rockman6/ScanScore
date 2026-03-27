@@ -362,6 +362,34 @@ public class GuiActions
         logger.info("\n----- Occupied memory is {} bytes -----\n", Memory.getValue());
     }
 
+    //----------------//
+    // toggleDarkMode //
+    //----------------//
+    /**
+     * Action to toggle between light and dark UI theme
+     *
+     * @param e the event which triggered this action
+     */
+    @Action(selectedProperty = "darkMode")
+    public void toggleDarkMode (ActionEvent e)
+    {
+        org.audiveris.omr.ui.util.UILookAndFeel.toggleDarkMode(isDarkMode());
+    }
+
+    private boolean darkMode = false;
+
+    public boolean isDarkMode ()
+    {
+        return darkMode;
+    }
+
+    public void setDarkMode (boolean darkMode)
+    {
+        boolean old = this.darkMode;
+        this.darkMode = darkMode;
+        firePropertyChange("darkMode", old, darkMode);
+    }
+
     //--------------//
     // visitWebSite //
     //--------------//

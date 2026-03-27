@@ -124,6 +124,7 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Point;
@@ -413,55 +414,84 @@ public abstract class SheetPainter
         }
 
         final Color oldColor = g.getColor();
-        g.setColor(Colors.MUSIC_ALONE);
+        final Font oldFont = g.getFont();
 
         final int partDx = constants.partDx.getValue();
         final int partDy = constants.partDy.getValue();
 
         final Score score = system.getPage().getScore();
-        final double zoom = constants.zoomForPartName.getValue();
-        final AffineTransform fat = AffineTransform.getScaleInstance(zoom, zoom);
+
+        // Colors for instrument name overlay
+        final Color LLM_COLOR = new Color(0x00, 0x99, 0x00); // bright green for LLM-identified
+        final Color DEFAULT_COLOR = new Color(0x99, 0x00, 0x00); // dark red for unrecognized
+        final Color BG_COLOR = new Color(255, 255, 255, 220); // semi-transparent white background
 
         for (Part part : system.getParts()) {
-            if (part.getName() != null)
-                continue; // There is a partName inter, it is displayed by the sig painter
-
-            // Otherwise use info from logical part, if available
+            // Get the logical part — skip if none
             final LogicalPart logical = part.getLogicalPart();
+            if (logical == null) continue;
+
             final PartRef partRef = part.getRef();
 
-            if (logical != null) {
-                // First logicap part occurrence displays logical name
-                // The next ones display logical abbreviation if available, otherwise the name
-                final String str;
-                if (score.getFirstOccurrence(logical) == partRef) {
+            // Determine the display string
+            final String str;
+            if (score.getFirstOccurrence(logical) == partRef) {
+                str = logical.getName();
+            } else {
+                final String abbrev = logical.getAbbreviation();
+                if ((abbrev != null) && !abbrev.isBlank())
+                    str = abbrev;
+                else
                     str = logical.getName();
-                } else {
-                    final String abbrev = logical.getAbbreviation();
-                    if ((abbrev != null) && !abbrev.isBlank())
-                        str = abbrev;
-                    else
-                        str = logical.getName();
-                }
-
-                if (str != null) {
-                    final Staff s1 = part.getFirstStaff();
-                    final int x = s1.getAbscissa(HorizontalSide.LEFT);
-                    final LineInfo l1 = s1.getMidLine();
-                    int y = l1.yAt(x - partDx) + partDy;
-
-                    final Staff s2 = part.getLastStaff();
-                    if (s2 != s1) {
-                        final LineInfo l2 = s2.getMidLine();
-                        y = (y + l2.yAt(x - partDx) + partDy) / 2;
-                    }
-
-                    final TextLayout layout = basicLayout(str, fat);
-                    paint(layout, new Point(x - partDx, y), TOP_RIGHT);
-                }
             }
+
+            if (str == null || str.isBlank()) continue;
+
+            // Determine position: centered vertically on the staff, to the left
+            final Staff s1 = part.getFirstStaff();
+            final int x = s1.getAbscissa(HorizontalSide.LEFT);
+            final LineInfo l1 = s1.getMidLine();
+            int y = l1.yAt(x) + partDy;
+
+            final Staff s2 = part.getLastStaff();
+            if (s2 != s1) {
+                final LineInfo l2 = s2.getMidLine();
+                y = (y + l2.yAt(x) + partDy) / 2;
+            }
+
+            logger.info("PAINT-PART: '{}' at ({},{}) midi={}", str, x, y, logical.getMidiProgram());
+
+            // Use a bold font at a size proportional to the interline
+            int interline = s1.getSpecificInterline();
+            Font nameFont = new Font("SansSerif", Font.BOLD, Math.max(interline, 10));
+            g.setFont(nameFont);
+
+            // Measure the text
+            FontMetrics fm = g.getFontMetrics();
+            int textWidth = fm.stringWidth(str);
+            int textHeight = fm.getHeight();
+            int textAscent = fm.getAscent();
+
+            // Position: right-aligned to left of staff, with some margin
+            int tx = x - partDx - textWidth;
+            int ty = y - textHeight / 2;
+
+            // Draw white background box
+            g.setColor(BG_COLOR);
+            g.fillRect(tx - 3, ty - 1, textWidth + 6, textHeight + 2);
+
+            // Draw border
+            boolean recognized = (logical.getMidiProgram() != null);
+            Color textColor = recognized ? LLM_COLOR : DEFAULT_COLOR;
+            g.setColor(new Color(textColor.getRed(), textColor.getGreen(), textColor.getBlue(), 80));
+            g.drawRect(tx - 3, ty - 1, textWidth + 6, textHeight + 2);
+
+            // Draw the instrument name
+            g.setColor(textColor);
+            g.drawString(str, tx, ty + textAscent);
         }
 
+        g.setFont(oldFont);
         g.setColor(oldColor);
     }
 
@@ -488,11 +518,11 @@ public abstract class SheetPainter
                 drawPartLimits(system);
             }
 
-            // Parts name/abbreviation if needed
-            processParts(system);
-
             // All interpretations for this system
             sigPainter.process(system.getSig());
+
+            // Parts name/abbreviation AFTER sig painter so labels are on top
+            processParts(system);
         } catch (ConcurrentModificationException ignored) { //
         } catch (Exception ex) {
             logger.warn("Cannot paint system#{}", system.getId(), ex);

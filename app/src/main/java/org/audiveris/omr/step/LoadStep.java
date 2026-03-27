@@ -107,7 +107,7 @@ public class LoadStep
     {
         private final Constant.Integer maxPixelCount = new Constant.Integer( //
                 "Pixels", //
-                20_000_000, //
+                0, //
                 "Maximum image size, specified in pixel count (0 for no check)");
     }
 }

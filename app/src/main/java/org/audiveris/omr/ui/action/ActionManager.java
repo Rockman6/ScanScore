@@ -50,6 +50,7 @@ import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JToolBar;
+import javax.swing.SwingConstants;
 import javax.xml.bind.JAXBException;
 
 /**
@@ -257,7 +258,15 @@ public class ActionManager
                     button.setAction(action);
                     toolBar.add(button);
                     button.setBorder(UIUtil.getToolBorder());
-                    button.setText("");
+                    button.setVerticalTextPosition(SwingConstants.BOTTOM);
+                    button.setHorizontalTextPosition(SwingConstants.CENTER);
+
+                    // Replace old Crystal icon with modern flat icon if available
+                    javax.swing.ImageIcon modernIcon = org.audiveris.omr.ui.ModernIcons.getIcon(
+                            desc.methodName);
+                    if (modernIcon != null) {
+                        button.setIcon(modernIcon);
+                    }
                 }
             } else {
                 logger.error("Unknown action {} in class {}", desc.methodName, desc.className);

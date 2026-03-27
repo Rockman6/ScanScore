@@ -36,11 +36,10 @@ import org.audiveris.omr.sheet.Book;
 import org.audiveris.omr.sheet.SheetStub;
 import org.audiveris.omr.sheet.Versions;
 import org.audiveris.omr.sheet.ui.BookActions;
-import org.audiveris.omr.sheet.ui.SheetPainter;
 import org.audiveris.omr.sheet.ui.SheetView;
 import org.audiveris.omr.sheet.ui.StubsController;
 import org.audiveris.omr.step.ui.StepMenu;
-import org.audiveris.omr.step.ui.StepMonitoring;
+
 import org.audiveris.omr.text.OCR;
 import org.audiveris.omr.text.OcrUtil;
 import org.audiveris.omr.text.tesseract.Languages;
@@ -66,7 +65,7 @@ import org.bushe.swing.event.EventSubscriber;
 import java.awt.BorderLayout;
 import java.awt.Container;
 import java.awt.Dimension;
-import java.awt.GridLayout;
+
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
@@ -75,13 +74,14 @@ import java.util.EventObject;
 import java.util.List;
 import java.util.concurrent.Callable;
 
+
 import javax.swing.JEditorPane;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
-import javax.swing.JMenuBar;
+
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
-import javax.swing.JPanel;
+
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 
@@ -186,7 +186,7 @@ public class MainGui
         final Container content = frame.getContentPane();
         content.setLayout(new BorderLayout());
 
-        // Top: ToolBar
+        // Top: main toolbar
         content.add(ActionManager.getInstance().getToolBar(), BorderLayout.NORTH);
 
         // Center: stubsPane on top and Log on bottom
@@ -194,7 +194,7 @@ public class MainGui
         mainPane.setBorder(null);
         mainPane.setContinuousLayout(true);
         mainPane.setOneTouchExpandable(true);
-        mainPane.setResizeWeight(0.9d); // Give bulk space to upper part
+        mainPane.setResizeWeight(0.97d); // Score takes nearly all space; log collapsed by default
         mainPane.setMinimumSize(new Dimension(500, 500)); // To make sure it is always visible
         content.add(mainPane, BorderLayout.CENTER);
         mainPane.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, this);
@@ -265,34 +265,22 @@ public class MainGui
             }
         }
 
-        // Menu bar
-        JMenuBar innerBar = mgr.getMenuBar();
+        // No menu bar — all actions are in the toolbar
 
-        // Gauges = voices | progress | memory
-        JPanel gauges = new JPanel();
-        gauges.setLayout(new BorderLayout());
-        gauges.add(SheetPainter.getVoicePanel(), BorderLayout.WEST);
-        gauges.add(StepMonitoring.createMonitor().getComponent(), BorderLayout.CENTER);
-        gauges.add(new MemoryMeter().getComponent(), BorderLayout.EAST);
-
-        // Outer bar = menu | gauges
-        JMenuBar outerBar = new JMenuBar();
-        outerBar.setLayout(new GridLayout(1, 0));
-        outerBar.add(innerBar);
-        outerBar.add(gauges);
-
-        // Remove useless borders
-        UIUtil.suppressBorders(gauges);
-        innerBar.setBorder(null);
-        outerBar.setBorder(null);
-
-        frame.setJMenuBar(outerBar);
-
-        //        // Mac Application menu
-        //        if (WellKnowns.MAC_OS_X) {
-        //            MacApplication.setupMacMenus();
-        //            MacApplication.setupMacDockIcon();
-        //        }
+        // Set macOS dock icon using modern Taskbar API (Java 9+)
+        if (java.awt.Taskbar.isTaskbarSupported()) {
+            try {
+                java.awt.Taskbar taskbar = java.awt.Taskbar.getTaskbar();
+                if (taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
+                    java.net.URL iconUrl = MainGui.class.getResource("resources/icon-256.png");
+                    if (iconUrl != null) {
+                        taskbar.setIconImage(new javax.swing.ImageIcon(iconUrl).getImage());
+                    }
+                }
+            } catch (Exception ex) {
+                logger.debug("Could not set dock icon: {}", ex.getMessage());
+            }
+        }
     }
 
     //---------------------//

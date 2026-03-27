@@ -177,7 +177,18 @@ public class HeaderTimeBuilder
 
         // We need at least space before and space after
         if (spaces.size() < 2) {
-            logger.debug("Staff#{} lacking spaces around time sig", staff.getId());
+            logger.info("Staff#{} lacking spaces around time sig (found {}), using full ROI as fallback",
+                    staff.getId(), spaces.size());
+
+            // Fallback: use full ROI when we can't find proper spaces
+            // This is common in dense orchestral scores where time sig is close to clef/key
+            if (!spaces.isEmpty()) {
+                range.setStart(spaces.get(0).stop);
+                range.setStop(roi.x + roi.width - 1);
+            } else {
+                range.setStart(roi.x);
+                range.setStop(roi.x + roi.width - 1);
+            }
 
             return;
         }
@@ -188,11 +199,15 @@ public class HeaderTimeBuilder
         int delta = first.stop - roi.x;
 
         if (delta > params.maxFirstSpaceWidth) {
-            logger.debug(
-                    "Staff#{} too large space before time sig: {} vs {}",
+            logger.info(
+                    "Staff#{} large space before time sig: {} vs {}, using relaxed range",
                     staff.getId(),
                     delta,
                     params.maxFirstSpaceWidth);
+
+            // Relaxed fallback: still try using the spaces we found
+            range.setStart(first.stop);
+            range.setStop(spaces.get(spaces.size() - 1).start);
 
             return;
         }
@@ -242,10 +257,18 @@ public class HeaderTimeBuilder
         // Projection can help refine the abscissa range
         browseProjection();
 
+        logger.info("Staff#{} findCandidates: range.hasStart={} width={} minTimeWidth={}",
+                staff.getId(),
+                range.hasStart(),
+                range.hasStart() ? range.getWidth() : -1,
+                params.minTimeWidth);
+
         if (range.hasStart() && (range.getWidth() >= params.minTimeWidth)) {
             processWhole(); //   Look for whole time sigs (common, cut or combo like 6/8)
             processHalf(NUM); // Look for top halves      (like 6/)
             processHalf(DEN); // Look for bottom halves   (like /8)
+        } else {
+            logger.info("Staff#{} time sig region not found — skipping time sig detection", staff.getId());
         }
     }
 
@@ -564,12 +587,15 @@ public class HeaderTimeBuilder
                     Grades.timeMinGrade / Grades.intrinsicRatio,
                     null);
 
+            logger.info("Staff#{} HALF {} glyph#{} evals={}", staff.getId(), half, glyph.getId(),
+                    java.util.Arrays.toString(evals));
+
             for (Evaluation eval : evals) {
                 final Shape shape = eval.shape;
 
                 if (halfShapes.contains(shape)) {
                     final double grade = Grades.intrinsicRatio * eval.grade;
-                    logger.debug("   {} eval {} for glyph#{}", half, eval, glyph.getId());
+                    logger.info("   {} eval {} grade={} for glyph#{}", half, eval, grade, glyph.getId());
 
                     Inter bestInter = bestMap.get(shape);
 
@@ -693,12 +719,15 @@ public class HeaderTimeBuilder
                     Grades.timeMinGrade / Grades.intrinsicRatio,
                     null);
 
+            logger.info("Staff#{} WHOLE glyph#{} evals={}", staff.getId(), glyph.getId(),
+                    java.util.Arrays.toString(evals));
+
             for (Evaluation eval : evals) {
                 final Shape shape = eval.shape;
 
                 if (wholeShapes.contains(shape)) {
                     final double grade = Grades.intrinsicRatio * eval.grade;
-                    logger.debug("   WHOLE eval {} for glyph#{}", eval, glyph.getId());
+                    logger.info("   WHOLE eval {} grade={} for glyph#{}", eval, grade, glyph.getId());
 
                     Inter bestInter = bestMap.get(shape);
 

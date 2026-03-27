@@ -414,9 +414,8 @@ public class RubberPanel
                 // Third, draw selected items (to be provided in subclass)
                 renderItems(g);
             } catch (ConcurrentModificationException ex) {
-                // It's hard to avoid all concurrent modifs since the GUI may need to
-                // repaint a view, while some processing is taking place ...
-                repaint(); // Simply trigger another painting later ...
+                // Schedule a single deferred repaint instead of immediate (avoids repaint loops)
+                SwingUtilities.invokeLater(this::repaint);
             } catch (Throwable ex) {
                 logger.warn("RubberPanel paintComponent " + ex, ex);
             } finally {

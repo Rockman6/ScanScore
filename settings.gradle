@@ -24,7 +24,7 @@ pluginManagement {
 }
 
 // Name for the project
-rootProject.name = 'Audiveris'
+rootProject.name = 'ScanScore'
 
 // Application
 include 'app'

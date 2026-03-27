@@ -118,10 +118,6 @@ public class ScoreExporter
     {
         Objects.requireNonNull(os, "Trying to export a score to a null output stream");
 
-        // Build the ScorePartwise proxy
-        ScorePartwise scorePartwise = PartwiseBuilder.build(score);
-
-        // Marshal the proxy
         if (compressed) {
             Mxl.Output mof = new Mxl.Output(os);
             OutputStream zos = mof.getOutputStream();
@@ -132,11 +128,11 @@ public class ScoreExporter
 
             mof.addEntry(
                     new RootFile(scoreName + OMR.SCORE_EXTENSION, RootFile.MUSICXML_MEDIA_TYPE));
-            Marshalling.marshal(scorePartwise, zos, signed, 2);
+            new SimpleExporter(score).export(zos);
             mof.close();
         } else {
             try (os) {
-                Marshalling.marshal(scorePartwise, os, signed, 2);
+                new SimpleExporter(score).export(os);
             }
         }
     }

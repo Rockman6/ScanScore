@@ -266,14 +266,18 @@ public class PartCollation
         for (int ic = ic1; ic != ic2; ic += dir) {
             final PartRef partRef = sequence.get(ic);
             final List<StaffConfig> staffConfigs = partRef.getStaffConfigs();
-            logger.debug("\nCandidate {}", partRef.toQualifiedString());
+            logger.info("COLLATE-DIAG: Candidate[{}] name='{}' staffCount={} staffConfigs={}",
+                    ic, partRef.getName(), partRef.getStaffCount(),
+                    StaffConfig.toCsvString(staffConfigs));
 
             if (partRef.isManual()) {
+                logger.info("COLLATE-DIAG:   -> manual assignment, skipping");
                 continue; // Candidate part already assigned manually
             }
 
             // Check against defined records
             recordIndex += dir;
+            final int candidateStartIndex = recordIndex; // Save for cascade fix
 
             for (; ((dir > 0) && (recordIndex < records.size())) || ((dir < 0)
                     && (recordIndex >= 0)); recordIndex += dir) {
@@ -284,11 +288,12 @@ public class PartCollation
                 }
 
                 final LogicalPart logical = record.logical;
-                logger.debug("  Comparing with {}", logical);
 
                 // Check parts are compatible in terms of staves counts
                 if (logical.getStaffCount() != partRef.getStaffCount()) {
-                    logger.debug("   Staff count incompatibility");
+                    logger.info("COLLATE-DIAG:   record[{}] name='{}' SKIP: staffCount {}!={}",
+                            recordIndex, logical.getName(),
+                            logical.getStaffCount(), partRef.getStaffCount());
                     continue;
                 }
 
@@ -297,20 +302,36 @@ public class PartCollation
                 if (!staffConfigs.isEmpty() //
                         && !logical.getStaffConfigs().isEmpty() //
                         && !Objects.deepEquals(logical.getStaffConfigs(), staffConfigs)) {
-                    logger.debug("    Line counts incompatibility");
+                    logger.info("COLLATE-DIAG:   record[{}] name='{}' SKIP: staffConfigs {}!={}",
+                            recordIndex, logical.getName(),
+                            StaffConfig.toCsvString(logical.getStaffConfigs()),
+                            StaffConfig.toCsvString(staffConfigs));
                     continue;
                 }
 
                 // Check candidate name
                 final String name = partRef.getName();
-                if ((name != null) //
-                        && !name.equalsIgnoreCase(logical.getName()) //
-                        && !name.equalsIgnoreCase(logical.getAbbreviation())) {
-                    logger.debug("    Name incompatibility");
-                    continue;
+                if (name != null) {
+                    final boolean rawMatch = name.equalsIgnoreCase(logical.getName())
+                            || name.equalsIgnoreCase(logical.getAbbreviation());
+                    if (!rawMatch) {
+                        final InstrumentDictionary dict = InstrumentDictionary.getInstance();
+                        final String normCandidate = dict.normalize(name);
+                        final String normLogical = dict.normalize(logical.getName());
+                        // If both sides are recognized by the dictionary, they must agree
+                        final boolean dictMismatch = (normCandidate != null)
+                                && (normLogical != null)
+                                && !normCandidate.equalsIgnoreCase(normLogical);
+                        if (dictMismatch) {
+                            logger.info("COLLATE-DIAG:   record[{}] name='{}' SKIP: name mismatch '{}' vs '{}' (norm: '{}' vs '{}')",
+                                    recordIndex, logical.getName(),
+                                    name, logical.getName(), normCandidate, normLogical);
+                            continue;
+                        }
+                    }
                 }
 
-                logger.debug("    Success");
+                logger.info("COLLATE-DIAG:   record[{}] name='{}' -> MATCHED", recordIndex, logical.getName());
                 record.partRefs.add(partRef);
 
                 // Use name of affiliate part to define abbreviation of logical?
@@ -329,10 +350,17 @@ public class PartCollation
                 continue CandidateLoop;
             }
 
-            logger.debug("  No more records available");
+            logger.info("COLLATE-DIAG:   No matching record found -> {}",
+                    logicalsLocked ? "UNMAPPED (logicals locked)" : "NEW RECORD created");
 
             if (!logicalsLocked) {
                 addRecord(dir, partRef, records); // Create a brand new record for this candidate
+                // Fix cascade: addRecord inserted at position 0 (for dir<0) shifting all existing
+                // records up by 1. Restore recordIndex so subsequent candidates can still scan
+                // the records that remain unmatched above the insertion point.
+                if (dir < 0) {
+                    recordIndex = candidateStartIndex + 1;
+                }
             } else {
                 logger.info("  Cannot map {} to any logical", partRef.toQualifiedString());
             }
